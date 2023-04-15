@@ -1,9 +1,9 @@
 import streamlit as st
 from streamlit_chat import message
 
+from gen_embedding import text2embedding
 from inference import load_llm_model
 from search_engine import get_news
-from gen_embedding import text2embedding
 from vector_database import result4search
 
 MAX_TURNS = 20
@@ -41,6 +41,26 @@ def button_reset_event():
     st.session_state["state"] = []
 
 
+def get_news(prompt) -> str:
+    # news from web search engine
+    search_news = get_news(prompt)
+    if (search_news is not None) and len(search_news[0]) >= 1:
+        relevant_news = get_news(prompt)[0]["body"]
+    else:
+        relevant_news = ""
+    return relevant_news
+
+
+def get_knowledge(prompt) -> str:
+    # knowledge from database
+    database_answer = result4search(text2embedding(prompt))[0]
+    if database_answer is not None:
+        relevant_knowledge = database_answer["response"]
+    else:
+        relevant_knowledge = ""
+    return relevant_knowledge
+
+
 if __name__ == "__main__":
     model_root_path = "D:\\GitHub\\LLM-Weights\\"
 
@@ -67,28 +87,30 @@ if __name__ == "__main__":
                                placeholder="请在这儿输入您的命令")
 
     # set button
-    col1, col2 = st.columns([0.1, 0.9], gap="small")
+    col1, col2, col3 = st.columns([0.1, 0.5, 0.5], gap="small")
 
     with col1:
         button_send = st.button("send", key="generate_answer")
     with col2:
         button_reset = st.button("reset", on_click=button_reset_event())
+    with col3:
+        button_choose = st.radio(
+            "Set real-time context source: ",
+            key="visibility",
+            options=["news", "database", "both", "none"],
+        )
 
     if button_send:
-        # news from web search engine
-        search_news = get_news(prompt_text)
-        if (search_news is not None) and len(search_news[0]) >= 1:
-            relevant_news = get_news(prompt_text)[0]["body"]
+        if button_choose == "news":
+            prompt_text = prompt_text = "问题：" + prompt_text + "，请参考以下内容生成答案：" + get_news(prompt_text)
+        elif button_choose == "database":
+            prompt_text = "问题：" + prompt_text + "，请参考以下内容生成答案：" + get_knowledge(prompt_text)
+        elif button_choose == "both":
+            prompt_text = "问题：" + prompt_text + "，请参考以下内容生成答案：" + get_news(prompt_text) + "。" + get_knowledge(
+                prompt_text)
         else:
-            relevant_news = ""
-        # knowledge from database
-        database_answer = result4search(text2embedding(prompt_text))[0]
-        if database_answer is not None:
-            relevant_answer = database_answer["response"]
-        else:
-            relevant_answer = ""
-        prompt_text = "问题：" + prompt_text + "，请参考以下内容生成答案：" + relevant_news + "。" + relevant_answer
-        with st.spinner("AI正在思考，请稍等........"):
+            prompt_text = "问题：" + prompt_text
+        with st.spinner("AI正在思考，请稍等......"):
             st.session_state["state"] = generate_answer(model_root_path,
                                                         prompt_text,
                                                         st.session_state["state"])
